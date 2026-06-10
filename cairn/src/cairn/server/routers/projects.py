@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, HTTPException, Request
 
 from cairn.server.db import get_conn
 from cairn.server.models import (
@@ -38,6 +40,7 @@ from cairn.server.services import (
     validate_goal_not_in_sources,
 )
 
+LOG = logging.getLogger(__name__)
 router = APIRouter(tags=["projects"])
 
 
@@ -98,10 +101,37 @@ def create_project(body: CreateProjectRequest):
             for h in body.hints:
                 hid = next_hint_id(conn, pid)
                 conn.execute(
-                    "INSERT INTO hints (id, project_id, content, creator, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (hid, pid, h.content, h.creator, now),
+                    """
+                    INSERT INTO hints
+                        (id, project_id, content, creator, hint_type, priority, target_type, target_id, pinned, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        hid,
+                        pid,
+                        h.content,
+                        h.creator,
+                        h.hint_type,
+                        h.priority,
+                        h.target_type,
+                        h.target_id,
+                        int(h.pinned),
+                        now,
+                    ),
                 )
-                hints.append(Hint(id=hid, content=h.content, creator=h.creator, created_at=now))
+                hints.append(
+                    Hint(
+                        id=hid,
+                        content=h.content,
+                        creator=h.creator,
+                        hint_type=h.hint_type,
+                        priority=h.priority,
+                        target_type=h.target_type,
+                        target_id=h.target_id,
+                        pinned=h.pinned,
+                        created_at=now,
+                    )
+                )
 
         return ProjectDetail(
             project=ProjectMeta(
@@ -132,7 +162,7 @@ def get_project(project_id: str):
             "SELECT * FROM facts WHERE project_id = ?", (project_id,)
         ).fetchall()
         hints = conn.execute(
-            "SELECT * FROM hints WHERE project_id = ? ORDER BY created_at",
+            "SELECT * FROM hints WHERE project_id = ? ORDER BY pinned DESC, created_at",
             (project_id,),
         ).fetchall()
 
@@ -164,7 +194,7 @@ def update_project_title(project_id: str, body: UpdateProjectTitleRequest):
 
 
 @router.put("/projects/{project_id}/status", response_model=ProjectMeta)
-def update_project_status(project_id: str, body: UpdateProjectStatusRequest):
+def update_project_status(project_id: str, body: UpdateProjectStatusRequest, request: Request):
     with get_conn() as conn:
         expire_reason_leases(conn, project_id)
         row = get_project_or_404(conn, project_id)
@@ -174,6 +204,14 @@ def update_project_status(project_id: str, body: UpdateProjectStatusRequest):
         if current_status == body.status:
             return project_meta_from_row(row)
 
+        LOG.info(
+            "project status update project=%s from=%s to=%s client=%s user_agent=%s",
+            project_id,
+            current_status,
+            body.status,
+            request.client.host if request.client else "-",
+            request.headers.get("user-agent", "-"),
+        )
         conn.execute(
             "UPDATE projects SET status = ? WHERE id = ?",
             (body.status, project_id),
