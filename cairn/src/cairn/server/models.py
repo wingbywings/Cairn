@@ -307,6 +307,26 @@ class ConcludeResponse(BaseModel):
     intent: Intent
 
 
+class UndoConcludeRequest(BaseModel):
+    actor: str
+    reason: str | None = None
+
+    @field_validator("actor", "reason")
+    @classmethod
+    def validate_non_empty_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class UndoConcludeResponse(BaseModel):
+    removed_fact: Fact
+    intent: Intent
+
+
 class UpdateProjectStatusRequest(BaseModel):
     status: Literal["active", "stopped"]
 
