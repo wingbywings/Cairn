@@ -127,6 +127,54 @@ def test_settings_and_export_are_backed_by_the_same_database(client: TestClient)
     assert client.get(f"/projects/{project_id}/export?format=invalid").status_code == 400
 
 
+def test_completed_project_exports_final_report(client: TestClient) -> None:
+    project_id = _create_project(client)
+    client.post(
+        f"/projects/{project_id}/intents",
+        json={"from": ["origin"], "description": "investigate first proof", "creator": "reasoner", "worker": None},
+    )
+    client.post(
+        f"/projects/{project_id}/intents/i001/conclude",
+        json={"worker": "explorer", "description": "first proof"},
+    )
+    client.post(
+        f"/projects/{project_id}/intents",
+        json={"from": ["f001"], "description": "verify proof", "creator": "reasoner", "worker": None},
+    )
+    client.post(
+        f"/projects/{project_id}/intents/i002/conclude",
+        json={"worker": "explorer", "description": "verified final proof"},
+    )
+    client.post(
+        f"/projects/{project_id}/complete",
+        json={"from": ["f002"], "description": "goal satisfied by verified proof", "worker": "reasoner"},
+    )
+
+    response = client.get(f"/projects/{project_id}/export?format=report")
+
+    assert response.status_code == 200
+    report = response.text
+    assert "# Final Report: test" in report
+    assert "- Status: completed" in report
+    assert "goal satisfied by verified proof" in report
+    assert "- Completion intent: i003" in report
+    assert "- Evidence facts: f002" in report
+    assert "- f001: first proof" in report
+    assert "- f002: verified final proof" in report
+    assert "- Open intents: 0" in report
+    assert "PROJECT COMPLETED" in report
+
+
+def test_report_export_marks_uncompleted_projects_as_current_state(client: TestClient) -> None:
+    project_id = _create_project(client)
+
+    response = client.get(f"/projects/{project_id}/export?format=report")
+
+    assert response.status_code == 200
+    assert "- Status: active" in response.text
+    assert "not a final completed report" in response.text
+
+
 def test_expired_intent_and_reason_leases_can_be_reclaimed(client: TestClient) -> None:
     project_id = _create_project(client)
     client.post(
@@ -357,3 +405,107 @@ def test_hint_metadata_is_persisted_and_exported(client: TestClient) -> None:
     assert "priority: high" in exported
     assert "target_type: fact" in exported
     assert "pinned: true" in exported
+
+
+def test_leaf_conclude_can_be_undone(client: TestClient) -> None:
+    project_id = _create_project(client)
+    assert client.post(
+        f"/projects/{project_id}/intents",
+        json={"from": ["origin"], "description": "investigate", "creator": "reasoner", "worker": None},
+    ).status_code == 201
+    assert client.post(
+        f"/projects/{project_id}/intents/i001/conclude",
+        json={"worker": "explorer", "description": "temporary fact"},
+    ).status_code == 200
+
+    response = client.post(
+        f"/projects/{project_id}/intents/i001/undo-conclude",
+        json={"actor": "human", "reason": "incorrect evidence"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["removed_fact"] == {"id": "f001", "description": "temporary fact"}
+    assert payload["intent"]["id"] == "i001"
+    assert payload["intent"]["to"] is None
+    assert payload["intent"]["worker"] is None
+    assert payload["intent"]["concluded_at"] is None
+
+    detail = client.get(f"/projects/{project_id}").json()
+    assert [fact["id"] for fact in detail["facts"]] == ["origin", "goal"]
+    assert detail["intents"][0]["to"] is None
+
+    events = client.get(f"/ops/events?project_id={project_id}&event_type=conclude_undone").json()
+    assert len(events) == 1
+    assert events[0]["intent_id"] == "i001"
+    assert events[0]["details"]["removed_fact_id"] == "f001"
+    assert events[0]["details"]["reason"] == "incorrect evidence"
+
+
+def test_conclude_undo_rejects_downstream_references(client: TestClient) -> None:
+    project_id = _create_project(client)
+    client.post(
+        f"/projects/{project_id}/intents",
+        json={"from": ["origin"], "description": "first", "creator": "reasoner", "worker": None},
+    )
+    client.post(
+        f"/projects/{project_id}/intents/i001/conclude",
+        json={"worker": "explorer", "description": "first fact"},
+    )
+    client.post(
+        f"/projects/{project_id}/intents",
+        json={"from": ["f001"], "description": "downstream", "creator": "reasoner", "worker": None},
+    )
+
+    response = client.post(
+        f"/projects/{project_id}/intents/i001/undo-conclude",
+        json={"actor": "human"},
+    )
+
+    assert response.status_code == 409
+    assert "downstream intent i002" in response.text
+
+
+def test_conclude_undo_rejects_completion_intent(client: TestClient) -> None:
+    project_id = _create_project(client)
+    client.post(
+        f"/projects/{project_id}/complete",
+        json={"from": ["origin"], "description": "solved", "worker": "reasoner"},
+    )
+
+    response = client.post(
+        f"/projects/{project_id}/intents/i001/undo-conclude",
+        json={"actor": "human"},
+    )
+
+    assert response.status_code == 409
+    assert "reopened" in response.text
+
+
+def test_conclude_undo_rejects_hint_targeting_produced_fact(client: TestClient) -> None:
+    project_id = _create_project(client)
+    client.post(
+        f"/projects/{project_id}/intents",
+        json={"from": ["origin"], "description": "first", "creator": "reasoner", "worker": None},
+    )
+    client.post(
+        f"/projects/{project_id}/intents/i001/conclude",
+        json={"worker": "explorer", "description": "first fact"},
+    )
+    client.post(
+        f"/projects/{project_id}/hints",
+        json={
+            "content": "review this fact",
+            "creator": "human",
+            "target_type": "fact",
+            "target_id": "f001",
+        },
+    )
+
+    response = client.post(
+        f"/projects/{project_id}/intents/i001/undo-conclude",
+        json={"actor": "human"},
+    )
+
+    assert response.status_code == 409
+    assert "targeted by hint" in response.text
