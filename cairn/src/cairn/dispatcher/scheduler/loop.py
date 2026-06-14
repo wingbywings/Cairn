@@ -13,6 +13,7 @@ from cairn.dispatcher.models import ReasonCheckpoint, RunningTask
 from cairn.dispatcher.protocol.client import CairnClient
 from cairn.dispatcher.runtime.cancellation import TaskCancellation
 from cairn.dispatcher.runtime.containers import ContainerManager
+from cairn.dispatcher.runtime.codex_update import ensure_codex_native_auto_updated, has_codex_native_workers
 from cairn.dispatcher.runtime.startup_healthcheck import format_failure_summary, run_startup_healthchecks
 from cairn.dispatcher.scheduler.worker_select import choose_worker
 from cairn.dispatcher.tasks.bootstrap import run_bootstrap_task
@@ -110,12 +111,18 @@ class DispatcherLoop:
     def run_startup_healthchecks(self, *, show_commands: bool = False, force: bool = False) -> None:
         if self._startup_healthchecks_checked:
             return
+        self._run_codex_native_auto_update()
         if not force and self.config.runtime.worker_healthcheck == "disabled":
             LOG.info("skip startup worker healthchecks because runtime.worker_healthcheck=disabled")
             self._startup_healthchecks_checked = True
             return
         self._run_startup_healthchecks(show_commands=show_commands)
         self._startup_healthchecks_checked = True
+
+    def _run_codex_native_auto_update(self) -> None:
+        if not has_codex_native_workers(self.config):
+            return
+        ensure_codex_native_auto_updated(self.config, self.container_manager)
 
     def _dispatch_available(self, summaries: list[ProjectSummary]) -> None:
         if len(self.futures) >= self.config.runtime.max_workers:

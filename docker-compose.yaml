@@ -30,6 +30,9 @@ services:
     environment:
       CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
       CODEX_ACCESS_TOKEN: "${CODEX_ACCESS_TOKEN:-}"
+      CAIRN_CODEX_NATIVE_AUTO_UPDATE: "${CAIRN_CODEX_NATIVE_AUTO_UPDATE:-}"
+      CAIRN_CODEX_NATIVE_VERSION: "${CAIRN_CODEX_NATIVE_VERSION:-}"
+      CAIRN_CODEX_NATIVE_UPDATE_TIMEOUT: "${CAIRN_CODEX_NATIVE_UPDATE_TIMEOUT:-}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./dispatch.yaml:/cairn/dispatch.yaml

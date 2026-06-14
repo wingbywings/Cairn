@@ -159,6 +159,8 @@ docker compose up --build
 ```
  
 This starts `cairn-server` on port `8000` and `cairn-dispatcher` once the server passes its health check. The dispatcher mounts `dispatch.yaml` from the project root and connects to Docker via the host socket. Data is persisted to `./datas/cairn/`.
+
+If `dispatch.yaml` includes a Codex worker with `CODEX_AUTH_MODE=chatgpt`, the dispatcher performs a Codex native CLI auto-update check at startup before worker health checks. The check runs in a temporary maintenance container without mounting user auth volumes; when a newer `@openai/codex` is installed, Cairn commits that container to a local derived worker image and uses it for the current dispatcher run. Set `CAIRN_CODEX_NATIVE_AUTO_UPDATE=0` to disable this behavior, or `CAIRN_CODEX_NATIVE_VERSION=0.x.y` to pin a specific Codex CLI version instead of checking npm latest.
  
 ### Manual
  

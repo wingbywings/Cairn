@@ -8,7 +8,7 @@ import threading
 import uuid
 
 import docker
-from docker.errors import APIError, DockerException, NotFound
+from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.models.containers import Container
 
 from cairn.dispatcher.config import ContainerConfig
@@ -85,6 +85,49 @@ class ContainerManager:
     def create_startup_container(self) -> str:
         name = f"{self._STARTUP_PREFIX}{uuid.uuid4().hex[:12]}"
         LOG.debug("creating startup healthcheck container container=%s image=%s", name, self._config.image)
+        self._create_sleep_container(name, include_volumes=True)
+        return name
+
+    def create_maintenance_container(self) -> str:
+        name = f"cairn-maintenance-{uuid.uuid4().hex[:12]}"
+        LOG.debug("creating maintenance container container=%s image=%s", name, self._config.image)
+        self._create_sleep_container(name, include_volumes=False)
+        return name
+
+    def use_image(self, image: str) -> None:
+        self._config.image = image
+
+    def commit_container(self, name: str, *, repository: str, tag: str) -> str:
+        container = self._require_container(name)
+        try:
+            container.commit(
+                repository=repository,
+                tag=tag,
+                message="Cairn Codex native auto-update",
+            )
+        except DockerException as exc:
+            raise RuntimeError(f"failed to commit container {name}: {exc}") from exc
+        return f"{repository}:{tag}"
+
+    def container_image_id(self, name: str) -> str:
+        container = self._require_container(name)
+        try:
+            container.reload()
+        except DockerException as exc:
+            raise RuntimeError(f"failed to inspect container {name}: {exc}") from exc
+        image_id = getattr(container.image, "id", "")
+        return str(image_id) if image_id else self._config.image
+
+    def image_exists(self, image: str) -> bool:
+        try:
+            self._client.images.get(image)
+        except ImageNotFound:
+            return False
+        except DockerException as exc:
+            raise RuntimeError(f"failed to inspect image {image}: {exc}") from exc
+        return True
+
+    def _create_sleep_container(self, name: str, *, include_volumes: bool) -> None:
         try:
             self._client.containers.run(
                 self._config.image,
@@ -93,11 +136,10 @@ class ContainerManager:
                 name=name,
                 network_mode=self._config.network_mode,
                 cap_add=self._config.cap_add or None,
-                volumes=self._volume_bindings(),
+                volumes=self._volume_bindings() if include_volumes else None,
             )
         except DockerException as exc:
-            raise RuntimeError(f"failed to create startup container {name}: {exc}") from exc
-        return name
+            raise RuntimeError(f"failed to create container {name}: {exc}") from exc
 
     def inspect_state(self, name: str) -> str | None:
         container = self._get_container(name)

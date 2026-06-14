@@ -734,6 +734,7 @@ claude -r "{session}" --dangerously-skip-permissions -p -- "{prompt}"
   - `CODEX_BASE_URL`
   - `OPENAI_API_KEY`
 - 当 `CODEX_AUTH_MODE=chatgpt` 时，使用 Codex 原生 ChatGPT 登录态；可通过挂载 `~/.codex` 或提供 `CODEX_ACCESS_TOKEN` 供容器内 CLI 使用
+- 只要配置中存在 `CODEX_AUTH_MODE=chatgpt` 的 `codex` worker，Dispatcher 启动时会先在不挂载用户登录态卷的临时维护容器中检查并更新 `@openai/codex`；更新成功后把维护容器 commit 为本地派生 worker 镜像，并在本轮 Dispatcher 中用于 startup healthcheck 和后续项目容器。可通过 `CAIRN_CODEX_NATIVE_AUTO_UPDATE=0` 关闭，或通过 `CAIRN_CODEX_NATIVE_VERSION=0.x.y` 固定目标版本
 
 健康检查可在 driver 内部按等价方式实现：
 

@@ -367,3 +367,32 @@ def test_startup_only_worker_healthcheck_runs_automatic_startup_check() -> None:
     loop.run_startup_healthchecks()
 
     assert calls == [False]
+
+
+def test_codex_native_auto_update_runs_before_startup_healthcheck(monkeypatch) -> None:
+    loop = _loop()
+    config = make_config()
+    worker = config.workers[0].model_copy(
+        update={
+            "name": "codex-native",
+            "type": "codex",
+            "env": {
+                "CODEX_MODEL": "gpt-test",
+                "CODEX_AUTH_MODE": "chatgpt",
+            },
+        }
+    )
+    loop.config = config.model_copy(update={"workers": [worker]})
+    loop.container_manager = object()
+    loop._startup_healthchecks_checked = False
+    events: list[str] = []
+
+    monkeypatch.setattr(
+        "cairn.dispatcher.scheduler.loop.ensure_codex_native_auto_updated",
+        lambda _config, _manager: events.append("update"),
+    )
+    loop._run_startup_healthchecks = lambda *, show_commands: events.append("healthcheck")
+
+    loop.run_startup_healthchecks()
+
+    assert events == ["update", "healthcheck"]
