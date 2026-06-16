@@ -213,3 +213,77 @@ def test_codex_chatgpt_mode_uses_native_login_without_provider_override() -> Non
     assert 'model_provider="cairn"' not in argv
     assert all(not arg.startswith("model_providers.cairn.") for arg in argv)
     assert argv[-2:] == ["--", "prompt"]
+
+
+def _codex_worker(env_extra: dict[str, str] | None = None) -> WorkerConfig:
+    env = {
+        "CODEX_MODEL": "gpt-test",
+        "CODEX_BASE_URL": "http://api/v1",
+        "OPENAI_API_KEY": "secret",
+    }
+    if env_extra:
+        env.update(env_extra)
+    return WorkerConfig.model_validate(
+        {
+            "name": "codex",
+            "type": "codex",
+            "task_types": ["reason"],
+            "max_running": 1,
+            "priority": 0,
+            "env": env,
+        }
+    )
+
+
+def _claudecode_worker(env_extra: dict[str, str] | None = None) -> WorkerConfig:
+    env = {
+        "ANTHROPIC_MODEL": "claude-test",
+        "ANTHROPIC_BASE_URL": "http://api",
+        "ANTHROPIC_AUTH_TOKEN": "secret",
+    }
+    if env_extra:
+        env.update(env_extra)
+    return WorkerConfig.model_validate(
+        {
+            "name": "claudecode",
+            "type": "claudecode",
+            "task_types": ["reason"],
+            "max_running": 1,
+            "priority": 0,
+            "env": env,
+        }
+    )
+
+
+def test_codex_reasoning_effort_defaults_to_high() -> None:
+    argv = CodexDriver().build_execute(_codex_worker(), "prompt", None).argv
+    assert 'model_reasoning_effort="high"' in argv
+
+
+def test_codex_reasoning_effort_from_env() -> None:
+    worker = _codex_worker({"CODEX_REASONING_EFFORT": "minimal"})
+    argv = CodexDriver().build_execute(worker, "prompt", None).argv
+    assert 'model_reasoning_effort="minimal"' in argv
+    assert 'model_reasoning_effort="high"' not in argv
+
+
+def test_codex_reasoning_effort_accepts_xhigh() -> None:
+    worker = _codex_worker({"CODEX_REASONING_EFFORT": "xhigh"})
+    argv = CodexDriver().build_execute(worker, "prompt", None).argv
+    assert 'model_reasoning_effort="xhigh"' in argv
+
+
+def test_codex_reasoning_effort_rejects_unknown_level() -> None:
+    # "max" is a Claude effort level, not a codex one.
+    with pytest.raises(ValidationError):
+        _codex_worker({"CODEX_REASONING_EFFORT": "max"})
+
+
+def test_claudecode_effort_level_passthrough() -> None:
+    worker = _claudecode_worker({"CLAUDE_CODE_EFFORT_LEVEL": "xhigh"})
+    assert worker.env["CLAUDE_CODE_EFFORT_LEVEL"] == "xhigh"
+
+
+def test_claudecode_effort_level_rejects_unknown_level() -> None:
+    with pytest.raises(ValidationError):
+        _claudecode_worker({"CLAUDE_CODE_EFFORT_LEVEL": "extra"})

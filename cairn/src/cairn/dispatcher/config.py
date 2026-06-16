@@ -28,6 +28,13 @@ WORKER_ENV_KEYS: dict[WorkerType, tuple[str, ...]] = {
     "mock": (),
 }
 
+# Optional per-worker reasoning effort. Both keys are passed through to the
+# underlying CLI: CLAUDE_CODE_EFFORT_LEVEL is read by Claude Code directly from
+# the environment; CODEX_REASONING_EFFORT is translated into a codex
+# `-c model_reasoning_effort=...` override by the codex adapter.
+CLAUDECODE_EFFORT_LEVELS = frozenset({"low", "medium", "high", "xhigh", "max"})
+CODEX_REASONING_EFFORT_LEVELS = frozenset({"minimal", "low", "medium", "high", "xhigh"})
+
 DEFAULT_PROMPT_REQUIRED_TOKENS: dict[str, tuple[str, ...]] = {
     "reason.md": ("{graph_yaml}", "{fact_ids}", "{open_intents}", "{max_intents}"),
     "explore.md": ("{graph_yaml}", "{intent_id}", "{intent_description}"),
@@ -286,6 +293,7 @@ def _validate_claudecode_env(worker_name: str, env: dict[str, str]) -> None:
         raise ValueError(f"worker {worker_name} CLAUDE_AUTH_MODE must be api_key or subscription")
     if mode == "api_key":
         _require_env(worker_name, env, ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"))
+    _validate_optional_enum_env(worker_name, env, "CLAUDE_CODE_EFFORT_LEVEL", CLAUDECODE_EFFORT_LEVELS)
 
 
 def _validate_codex_env(worker_name: str, env: dict[str, str]) -> None:
@@ -294,6 +302,19 @@ def _validate_codex_env(worker_name: str, env: dict[str, str]) -> None:
         raise ValueError(f"worker {worker_name} CODEX_AUTH_MODE must be provider_api_key or chatgpt")
     if mode == "provider_api_key":
         _require_env(worker_name, env, ("CODEX_BASE_URL", "OPENAI_API_KEY"))
+    _validate_optional_enum_env(worker_name, env, "CODEX_REASONING_EFFORT", CODEX_REASONING_EFFORT_LEVELS)
+
+
+def _validate_optional_enum_env(
+    worker_name: str, env: dict[str, str], key: str, allowed: frozenset[str]
+) -> None:
+    value = env.get(key)
+    if value is None or not value.strip():
+        return
+    if value not in allowed:
+        raise ValueError(
+            f"worker {worker_name} env {key} must be one of: {', '.join(sorted(allowed))}"
+        )
 
 
 def _require_env(worker_name: str, env: dict[str, str], keys: tuple[str, ...]) -> None:

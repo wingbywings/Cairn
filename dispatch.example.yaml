@@ -60,11 +60,22 @@ container:
   # cap_add:
   #   - "NET_RAW"
   #   - "NET_ADMIN"
+  volumes:
+      - "/Users/abc/.codex:/home/kali/.codex:rw"
+      - "/Users/abc/.claude:/home/kali/.claude:rw"
+      - "/Users/abc/.claude.json:/home/kali/.claude.json:rw"
 
 
 workers:
   # Worker priority is ascending: lower numbers are preferred first.
   # max_running is per-worker concurrency. Slower backends such as Pi usually benefit from lower values.
+  #
+  # Reasoning effort (optional, per-worker):
+  #   claudecode: CLAUDE_CODE_EFFORT_LEVEL  one of low|medium|high|xhigh|max  (Claude Code default: xhigh)
+  #   codex:      CODEX_REASONING_EFFORT    one of minimal|low|medium|high|xhigh  (adapter default: high; xhigh is model-dependent)
+  # Effort is an Anthropic/OpenAI reasoning-model feature; third-party models
+  # behind compatible endpoints may ignore it.
+
   - name: "claudecode_deepseek-v4-pro"
     type: "claudecode"
     task_types: [bootstrap, reason, explore]
@@ -74,6 +85,7 @@ workers:
       ANTHROPIC_MODEL: "deepseek-v4-pro"
       ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic"
       ANTHROPIC_AUTH_TOKEN: "sk-xxx"
+      # CLAUDE_CODE_EFFORT_LEVEL: "xhigh"
 
   # Native Claude Code subscription mode. Requires either a mounted Claude Code
   # login cache or CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`.
@@ -86,6 +98,7 @@ workers:
   #     CLAUDE_AUTH_MODE: "subscription"
   #     ANTHROPIC_MODEL: "sonnet"
   #     CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN}"
+  #     CLAUDE_CODE_EFFORT_LEVEL: "xhigh"
 
   - name: "codex_qwen3.6-plus"
     type: "codex"
@@ -96,6 +109,7 @@ workers:
       CODEX_MODEL: "qwen3.6-plus"
       CODEX_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
       OPENAI_API_KEY: "sk-xxx"
+      # CODEX_REASONING_EFFORT: "high"
 
   # Native Codex ChatGPT subscription mode. Requires a mounted Codex login cache
   # from `codex login` / `codex login --device-auth`, or CODEX_ACCESS_TOKEN.
@@ -107,6 +121,7 @@ workers:
   #   env:
   #     CODEX_AUTH_MODE: "chatgpt"
   #     CODEX_MODEL: "gpt-5.4"
+  #     CODEX_REASONING_EFFORT: "high"
   #     # CODEX_ACCESS_TOKEN: "${CODEX_ACCESS_TOKEN}"
 
   - name: "pi_qwen3.6-plus"

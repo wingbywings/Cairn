@@ -81,7 +81,8 @@ class CodexDriver(RegexSessionDriver):
         return worker.env.get("CODEX_AUTH_MODE", "provider_api_key")
 
     def _config_args(self, worker: WorkerConfig) -> list[str]:
-        args = ["-c", 'model_reasoning_effort="high"']
+        effort = worker.env.get("CODEX_REASONING_EFFORT") or "high"
+        args = ["-c", f'model_reasoning_effort="{effort}"']
         if self._auth_mode(worker) == "provider_api_key":
             env = worker.env
             args.extend(
